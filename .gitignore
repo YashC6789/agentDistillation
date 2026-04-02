@@ -1,0 +1,17 @@
+# Model weights and caches (Gigabytes - DO NOT PUSH)
+hf_cache/
+vllm_cache/
+
+# Python environment (if you made one in this folder)
+agent_env/
+venv/
+.conda/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS-specific files
+.DS_Store
+Thumbs.db
