@@ -2,6 +2,7 @@
 hf_cache/
 vllm_cache/
 qwen_0.5b_sft_midway/
+qwen_0.5b_sft_midway_h200/
 unsloth_compiled_cache/
 outputs_sft/
 
