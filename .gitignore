@@ -5,6 +5,9 @@ qwen_0.5b_sft_midway/
 qwen_0.5b_sft_midway_h200/
 unsloth_compiled_cache/
 outputs_sft/
+agentDistillation/
+grpo_qwen3_0_6b/
+grpo_qwen3_0_6b_final/
 
 # Python environment (if you made one in this folder)
 agent_env/

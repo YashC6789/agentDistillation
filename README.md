@@ -12,3 +12,6 @@ pip installs needed for sft:
 - optional (pip uninstall autoawq -y), or you can force it to not use autoawq
 
 To run the train_sft and eval_sft scripts, you need the pip installs above^. Also, change the file directories in these two files based off where you stored them. 
+
+For GRPO runs: 
+- pip install -U trl transformers accelerate datasets peft
