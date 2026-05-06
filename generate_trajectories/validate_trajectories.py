@@ -155,7 +155,7 @@ def estimate_training_time(trajectories: List[Dict[str, Any]], model_size: str =
     estimated_minutes = (num_samples / 100) * base_time
     estimated_hours = estimated_minutes / 60
     
-    print(f"\n⏱️  Estimated Training Time ({model_size} model on A100):")
+    print(f"\n Estimated Training Time ({model_size} model on A100):")
     print(f"   Dataset size: {num_samples} samples")
     print(f"   Estimated time: ~{estimated_hours:.1f} hours ({estimated_minutes:.0f} minutes)")
     print(f"   Note: Add ~20-30 minutes for setup and saving")
@@ -180,11 +180,11 @@ def main():
     print(f"Loaded {len(trajectories)} trajectories\n")
     
     if len(trajectories) == 0:
-        print("❌ Error: No trajectories loaded!")
+        print("Error: No trajectories loaded!")
         return
     
     # 1. Format validation
-    print("1️⃣  Validating format...")
+    print("Validating format...")
     format_results = validate_format(trajectories)
     print(f"   Valid samples: {format_results['valid_count']}/{format_results['total_count']}")
     
@@ -195,10 +195,10 @@ def main():
         if len(format_results['issues']) > 5:
             print(f"      ... and {len(format_results['issues']) - 5} more")
     else:
-        print("   ✅ All samples have valid format!")
+        print("All samples have valid format!")
     
     # 2. Content analysis
-    print("\n2️⃣  Analyzing content...")
+    print("\n Analyzing content...")
     content_results = analyze_content(trajectories)
     print(f"   Average response length: {content_results['avg_length']:.0f} characters")
     print(f"   Length range: {content_results['min_length']} - {content_results['max_length']}")
@@ -206,20 +206,20 @@ def main():
     print(f"   Answer formats: {dict(content_results['answer_formats'])}")
     
     # 3. Check for duplicates
-    print("\n3️⃣  Checking for duplicates...")
+    print("\n Checking for duplicates...")
     dup_results = check_duplicates(trajectories)
     print(f"   Unique questions: {dup_results['unique_questions']}")
     print(f"   Duplicate questions: {dup_results['duplicate_count']}")
     
     if dup_results['duplicates']:
-        print(f"   ⚠️  Found duplicates:")
+        print(f" Found duplicates:")
         for q, count in dup_results['duplicates'][:3]:
             print(f"      - \"{q[:60]}...\" appears {count} times")
     else:
-        print("   ✅ No duplicate questions found!")
+        print(" No duplicate questions found!")
     
     # 4. Show sample
-    print("\n4️⃣  Sample trajectory:")
+    print(" Sample trajectory:")
     print("-" * 60)
     if trajectories and 'messages' in trajectories[0]:
         sample = trajectories[0]['messages']
@@ -245,9 +245,9 @@ def main():
     )
     
     if all_valid:
-        print("✅ Dataset looks good! Ready for training.")
+        print("Dataset looks good! Ready for training.")
     else:
-        print("⚠️  Dataset has some issues:")
+        print("Dataset has some issues:")
         if format_results['valid_count'] < format_results['total_count']:
             print("   - Format validation errors detected")
         if content_results['thinking_percentage'] < 50:

@@ -1,3 +1,4 @@
+#Only difference from regular train_grpo is utilization of two GPUs.
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
