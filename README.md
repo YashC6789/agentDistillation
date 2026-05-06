@@ -1,17 +1,105 @@
 # agentDistillation
 
-Generated around 5.1k trajectories using generate_hf_trajectories_v100.py. When we get access to a better GPU we can re-generate these with a better model as well. 
+Distilling reasoning from a large teacher model into smaller models using SFT + GRPO on GSM8K.
 
-For SFT pipeline, you can first use the gsm8k_golden_trajectories.jsonl for testing (around 300 trajectories), then you can run it on the full trajectory generation (gsm8k_golden_trajectories_new.jsonl). 
+## Setup
 
-pip installs needed for trajectory generation: vllm datasets autoawq, i used python 3.11 conda env
+Recommended:
+- Python 3.11 (conda env)
 
-pip installs needed for sft: 
-- pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-- pip install --no-deps "xformers<0.0.27" "trl<0.9.0" peft accelerate bitsandbytes
-- optional (pip uninstall autoawq -y), or you can force it to not use autoawq
+### Trajectory generation
 
-To run the train_sft and eval_sft scripts, you need the pip installs above^. Also, change the file directories in these two files based off where you stored them. 
+pip install vllm datasets autoawq
 
-For GRPO runs: 
-- pip install -U trl transformers accelerate datasets peft
+
+### SFT
+
+pip install --no-deps "xformers<0.0.27" "trl<0.9.0" peft accelerate bitsandbytes
+
+Optional (if autoawq causes issues):
+
+pip uninstall autoawq -y
+
+
+### GRPO
+
+pip install -U trl transformers accelerate datasets peft
+
+
+## Data
+
+- `gsm8k_golden_trajectories.jsonl` → small (~300 samples, testing)
+- `gsm8k_qwen72b_gold_trajectories_h200.jsonl` → full dataset (~7k samples, best results)
+
+Teacher model used for trajectories:
+- Qwen2.5-72B-Instruct-AWQ
+
+## Training
+
+### SFT
+
+Test run:
+
+python train_sft.py
+--model_name Qwen/Qwen3-0.6B
+--dataset_file gsm8k_golden_trajectories.jsonl
+
+
+Full run:
+
+python train_sft.py
+--model_name Qwen/Qwen3-0.6B
+--dataset_file /path/to/gsm8k_qwen72b_gold_trajectories_h200.jsonl
+--output_dir /path/to/output
+--merged_save_path /path/to/model
+--num_train_samples 6000
+--max_steps 500
+
+
+### GRPO
+
+
+python train_grpo.py
+--base_model /path/to/sft_model
+--dataset_file /path/to/gsm8k_qwen72b_gold_trajectories_h200.jsonl
+--num_train_samples 5000
+--num_generations 4
+--max_completion_length 160
+--max_steps 800
+--output_dir /path/to/grpo_model
+
+
+## Evaluation
+
+
+python eval_gsm8k_grpo.py
+--model_path /path/to/model
+--num_eval_samples 300
+--max_new_tokens 160
+
+
+## Results
+
+| Model | Method | Accuracy | Avg Tokens |
+|------|--------|----------|------------|
+| Qwen3-0.6B | SFT | 35.33% | 145.27 |
+| Qwen3-0.6B | GRPO | **53.00%** | **110.56** |
+| Qwen3-1.7B | SFT | 40.00% | 146.40 |
+| Qwen3-1.7B | GRPO | **58.00%** | **132.65** |
+| Qwen3-4B | SFT | 44.33% | 146.76 |
+| Qwen3-4B | GRPO (strong) | **67.00%** | 154.34 |
+
+## Notes
+
+- Update file paths in scripts to match your environment
+- Do not commit model checkpoints (very large)
+- Add `.gitignore` for:
+  - model weights
+  - HF cache
+  - training outputs
+
+## Summary
+
+- GRPO significantly improves accuracy, especially for smaller models
+- 1.7B is a strong balance of performance and efficiency
+- 4B requires stronger GRPO settings to fully benefit
