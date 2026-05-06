@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 import re
 import argparse
@@ -13,31 +13,46 @@ import inspect
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--base_model", default="Qwen/Qwen3-0.6B")
+
+    p.add_argument("--base_model", default="Qwen/Qwen3-4B")
     p.add_argument("--sft_adapter", default=None)
-    p.add_argument("--dataset_file", default=os.path.expanduser("~/scratch/araj72/agentDistillation/gsm8k_qwen72b_gold_trajectories_h200.jsonl"))
-    p.add_argument("--output_dir", default=os.path.expanduser("~/scratch/araj72/agentDistillation/grpo_qwen3_0_6b"))
-    p.add_argument("--num_train_samples", type=int, default=50)
+    p.add_argument(
+        "--dataset_file",
+        default="/storage/ice1/4/7/araj72/agentDistillation/gsm8k_qwen72b_gold_trajectories_h200.jsonl",
+    )
+    p.add_argument(
+        "--output_dir",
+        default="/storage/ice1/4/7/araj72/agentDistillation/qwen3_4b_sft_grpo_strong_final",
+    )
+
+    p.add_argument("--num_train_samples", type=int, default=6000)
     p.add_argument("--num_generations", type=int, default=4)
+
     p.add_argument("--max_prompt_length", type=int, default=512)
-    p.add_argument("--max_completion_length", type=int, default=256)
-    p.add_argument("--max_steps", type=int, default=30)
+    p.add_argument("--max_completion_length", type=int, default=192)
+
+    p.add_argument("--max_steps", type=int, default=1000)
+    p.add_argument("--learning_rate", type=float, default=3e-6)
+
     return p.parse_args()
 
 
 def extract_final_answer(text):
-    # Prefer GSM8K-style #### answer
+    text = text.replace(",", "")
+
     m = re.findall(r"####\s*(-?\d+(?:\.\d+)?)", text)
     if m:
-        return m[-1].replace(",", "")
+        return m[-1]
 
-    # Prefer Final Answer:
     m = re.findall(r"Final Answer:\s*(-?\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
     if m:
-        return m[-1].replace(",", "")
+        return m[-1]
 
-    # Fallback: last number
-    nums = re.findall(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
+    m = re.findall(r"The answer is:?\s*(-?\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+    if m:
+        return m[-1]
+
+    nums = re.findall(r"-?\d+(?:\.\d+)?", text)
     return nums[-1] if nums else None
 
 
@@ -60,11 +75,28 @@ def get_question_and_answer(messages):
 def main():
     args = parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
+    print("=" * 80)
+    print("GRPO LARGE MODEL TRAINING")
+    print("=" * 80)
+    print(f"Base model: {args.base_model}")
+    print(f"Dataset: {args.dataset_file}")
+    print(f"Output: {args.output_dir}")
+    print(f"Train samples: {args.num_train_samples}")
+    print(f"Generations per prompt: {args.num_generations}")
+    print(f"Max completion length: {args.max_completion_length}")
+    print(f"Max steps: {args.max_steps}")
+    print(f"Learning rate: {args.learning_rate}")
+    print("=" * 80)
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.base_model,
+        trust_remote_code=True,
+    )
+
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    print("Loading base model...")
+    print("Loading base/SFT model...")
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
         torch_dtype=torch.bfloat16,
@@ -89,7 +121,12 @@ def main():
         prompt_messages = [
             {
                 "role": "system",
-                "content": "You are a math reasoning agent. Solve briefly. End EXACTLY with: Final Answer: <number>. Do not continue after that.",
+                "content": (
+                    "You are a math reasoning agent. "
+                    "Solve carefully but concisely. "
+                    "End EXACTLY with: Final Answer: <number>. "
+                    "Do not continue after the final answer."
+                ),
             },
             {
                 "role": "user",
@@ -109,7 +146,13 @@ def main():
             "gold_text": gold_answer,
         }
 
-    dataset = dataset.map(build_grpo_example)
+    original_columns = dataset.column_names
+
+    dataset = dataset.map(
+        build_grpo_example,
+        remove_columns=original_columns,
+    )
+
     dataset = dataset.filter(lambda x: x["answer"] is not None)
 
     print(f"Using {len(dataset)} GRPO examples")
@@ -123,23 +166,29 @@ def main():
         for completion, gt in zip(completions, answer):
             pred = extract_final_answer(completion)
 
-            acc_reward = 1.0 if pred == gt else 0.0
-            format_reward = 0.1 if "Final Answer" in completion else -0.1
-            length_penalty = 0.001 * len(completion.split())
+            # Correctness is the main objective.
+            acc_reward = 3.0 if pred == gt else 0.0
 
-            rewards.append(acc_reward + format_reward - length_penalty)
+            # Encourage consistent final-answer formatting.
+            format_reward = 0.2 if ("Final Answer" in completion or "####" in completion) else -0.2
+
+            # Mild length penalty. Do not over-punish 4B for reasoning.
+            length_penalty = 0.00025 * len(completion.split())
+
+            reward = acc_reward + format_reward - length_penalty
+            rewards.append(reward)
 
         return rewards
 
     config_kwargs = dict(
         output_dir=args.output_dir,
-        learning_rate=5e-6,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
+        learning_rate=args.learning_rate,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=1,
         num_generations=args.num_generations,
         max_steps=args.max_steps,
         logging_steps=1,
-        save_steps=25,
+        save_steps=999999,
         bf16=True,
         report_to="none",
     )
@@ -156,8 +205,10 @@ def main():
         config_kwargs["generation_kwargs"] = {
             "max_new_tokens": args.max_completion_length,
             "do_sample": True,
-            "temperature": 0.7,
+            "temperature": 0.9,
+            "top_p": 0.95,
             "eos_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.pad_token_id,
         }
 
     config = GRPOConfig(**config_kwargs)

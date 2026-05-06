@@ -8,16 +8,35 @@ from tqdm import tqdm
 
 
 def extract_final_answer(text):
+    text = text.replace(",", "")
+
     m = re.findall(r"####\s*(-?\d+(?:\.\d+)?)", text)
     if m:
-        return m[-1].replace(",", "")
+        return m[-1]
 
     m = re.findall(r"Final Answer:\s*(-?\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
     if m:
-        return m[-1].replace(",", "")
+        return m[-1]
 
-    nums = re.findall(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
+    m = re.findall(r"The answer is:?\s*(-?\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+    if m:
+        return m[-1]
+
+    nums = re.findall(r"-?\d+(?:\.\d+)?", text)
     return nums[-1] if nums else None
+
+
+def normalize_answer(ans):
+    if ans is None:
+        return None
+
+    try:
+        x = float(ans)
+        if x.is_integer():
+            return str(int(x))
+        return str(x)
+    except Exception:
+        return str(ans).strip()
 
 
 def main():
@@ -26,12 +45,14 @@ def main():
     p.add_argument("--base_model", default=None)
     p.add_argument("--adapter_path", default=None)
     p.add_argument("--num_eval_samples", type=int, default=300)
-    p.add_argument("--max_new_tokens", type=int, default=128)
+    p.add_argument("--max_new_tokens", type=int, default=160)
+    p.add_argument("--print_examples", type=int, default=0)
     args = p.parse_args()
 
     model_source = args.base_model if args.base_model else args.model_path
 
     tokenizer = AutoTokenizer.from_pretrained(model_source, trust_remote_code=True)
+
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -43,6 +64,7 @@ def main():
     )
 
     if args.adapter_path:
+        print(f"Loading adapter from {args.adapter_path}")
         model = PeftModel.from_pretrained(model, args.adapter_path)
 
     model.eval()
@@ -53,20 +75,21 @@ def main():
     correct = 0
     total = 0
     total_tokens = 0
+    printed = 0
 
     for ex in tqdm(dataset):
         question = ex["question"]
-        gold = extract_final_answer(ex["answer"])
+        gold = normalize_answer(extract_final_answer(ex["answer"]))
 
         messages = [
             {
-                "role": "system",
-                "content": "You are a math reasoning agent. Solve briefly. End EXACTLY with: Final Answer: <number>. Do not continue after that.",
-            },
-            {
                 "role": "user",
-                "content": question,
-            },
+                "content": (
+                    "Solve the following math problem step by step. "
+                    "End with either 'Final Answer: <number>' or '#### <number>'.\n\n"
+                    f"{question}"
+                ),
+            }
         ]
 
         prompt = tokenizer.apply_chat_template(
@@ -89,13 +112,26 @@ def main():
         generated = outputs[0][inputs["input_ids"].shape[1]:]
         text = tokenizer.decode(generated, skip_special_tokens=True)
 
-        pred = extract_final_answer(text)
+        pred = normalize_answer(extract_final_answer(text))
 
-        if pred == gold:
+        is_correct = pred == gold
+        if is_correct:
             correct += 1
 
         total += 1
         total_tokens += len(generated)
+
+        if printed < args.print_examples:
+            print("\n" + "=" * 80)
+            print("QUESTION:")
+            print(question)
+            print("\nMODEL OUTPUT:")
+            print(text)
+            print(f"\nPRED: {pred}")
+            print(f"GOLD: {gold}")
+            print(f"CORRECT: {is_correct}")
+            print("=" * 80)
+            printed += 1
 
     acc = correct / total
     avg_tokens = total_tokens / total

@@ -1,13 +1,12 @@
 # Model weights and caches (Gigabytes - DO NOT PUSH)
 hf_cache/
 vllm_cache/
-qwen_0.5b_sft_midway/
-qwen_0.5b_sft_midway_h200/
 unsloth_compiled_cache/
-outputs_sft/
 agentDistillation/
 grpo_qwen3_0_6b/
 grpo_qwen3_0_6b_final/
+qwen*/
+outputs*/
 
 # Python environment (if you made one in this folder)
 agent_env/
@@ -22,3 +21,7 @@ __pycache__/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+#keys
+key
+key.pub
